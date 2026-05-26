@@ -71,7 +71,7 @@ export async function assembleOffers(itemIds: string[]): Promise<Offer[]> {
     amount: string;
     currency: string;
     original_amount: string | null;
-    captured_at: Date;
+    captured_at: Date | string;
   }>(sql`
     SELECT DISTINCT ON (inventory_item_id)
       inventory_item_id, amount, currency, original_amount, captured_at
@@ -89,7 +89,7 @@ export async function assembleOffers(itemIds: string[]): Promise<Offer[]> {
     inventory_item_id: string;
     status: string;
     quantity: number | null;
-    captured_at: Date;
+    captured_at: Date | string;
     location_slug: string;
     location_kind: 'online' | 'physical';
     location_name: string;
@@ -137,7 +137,10 @@ export async function assembleOffers(itemIds: string[]): Promise<Offer[]> {
         lng: r.location_longitude,
       },
       stock: { status: r.status, quantity: r.quantity },
-      lastCheckedAt: r.captured_at?.toISOString() ?? null,
+      // `db.execute(sql\`…\`)` bypasses drizzle's column mapper, so
+      // captured_at can come back as a Date OR a string depending on the
+      // postgres-js parser config. Normalize either way.
+      lastCheckedAt: toIso(r.captured_at),
     };
     const list = stockByItem.get(r.inventory_item_id) ?? [];
     list.push(entry);
@@ -178,3 +181,10 @@ export async function assembleOffers(itemIds: string[]): Promise<Offer[]> {
 }
 
 export type { SQL };
+
+function toIso(v: Date | string | null | undefined): string | null {
+  if (v == null) return null;
+  if (v instanceof Date) return v.toISOString();
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
