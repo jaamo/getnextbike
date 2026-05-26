@@ -20,14 +20,18 @@
   "scripts": {
     "generate": "drizzle-kit generate",
     "migrate": "tsx src/migrate.ts",
+    "seed:admin": "tsx src/seed-admin.ts",
     "studio": "drizzle-kit studio",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@next/env": "^15.1.4",
+    "bcryptjs": "^2.4.3",
     "drizzle-orm": "^0.36.4",
     "postgres": "^3.4.5"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.10.5",
     "drizzle-kit": "^0.29.1",
     "tsx": "^4.19.2",

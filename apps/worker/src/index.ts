@@ -1,7 +1,17 @@
+import { createRequire } from 'node:module';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createDb } from '@getnextbike/db';
 import { sql } from 'drizzle-orm';
 import { type HealthState, startHealthServer } from './health';
 import { logger } from './logger';
+
+// Match apps/web: load the repo-root .env so both apps share one config file.
+// @next/env is CJS — createRequire is the portable ESM-from-CJS path.
+const require = createRequire(import.meta.url);
+const { loadEnvConfig } = require('@next/env') as typeof import('@next/env');
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+loadEnvConfig(repoRoot);
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
