@@ -1,6 +1,8 @@
 import { schema } from '@getnextbike/db';
-import { asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, gte } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
+import { PriceChart } from '@/components/charts/price-chart';
+import { type LocationSeries, StockTimeline } from '@/components/charts/stock-timeline';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -15,6 +17,9 @@ import { db } from '@/lib/db';
 import { archiveInventoryAction, updateInventoryAction } from '../actions';
 import { EditInventoryForm } from '../edit-form';
 import { inventoryStatuses } from '../enums';
+
+const CHART_WINDOW_DAYS = 90;
+const CHART_OBSERVATION_CAP = 1000;
 
 export default async function InventoryDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -57,7 +62,10 @@ export default async function InventoryDetailPage({ params }: { params: Promise<
     .orderBy(desc(schema.modelYears.year), asc(schema.brands.name), asc(schema.models.name))
     .limit(2000);
 
-  const recentPrices = await db
+  const windowEnd = new Date();
+  const windowStart = new Date(windowEnd.getTime() - CHART_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+
+  const pricesInWindow = await db
     .select({
       id: schema.priceObservations.id,
       amount: schema.priceObservations.amount,
@@ -66,16 +74,22 @@ export default async function InventoryDetailPage({ params }: { params: Promise<
       capturedAt: schema.priceObservations.capturedAt,
     })
     .from(schema.priceObservations)
-    .where(eq(schema.priceObservations.inventoryItemId, id))
-    .orderBy(desc(schema.priceObservations.capturedAt))
-    .limit(20);
+    .where(
+      and(
+        eq(schema.priceObservations.inventoryItemId, id),
+        gte(schema.priceObservations.capturedAt, windowStart),
+      ),
+    )
+    .orderBy(asc(schema.priceObservations.capturedAt))
+    .limit(CHART_OBSERVATION_CAP);
 
-  const recentStock = await db
+  const stockInWindow = await db
     .select({
       id: schema.stockObservations.id,
       status: schema.stockObservations.status,
       quantity: schema.stockObservations.quantity,
       capturedAt: schema.stockObservations.capturedAt,
+      locationId: schema.stockObservations.resellerLocationId,
       locationName: schema.resellerLocations.name,
       locationKind: schema.resellerLocations.kind,
     })
@@ -84,9 +98,19 @@ export default async function InventoryDetailPage({ params }: { params: Promise<
       schema.resellerLocations,
       eq(schema.stockObservations.resellerLocationId, schema.resellerLocations.id),
     )
-    .where(eq(schema.stockObservations.inventoryItemId, id))
-    .orderBy(desc(schema.stockObservations.capturedAt))
-    .limit(20);
+    .where(
+      and(
+        eq(schema.stockObservations.inventoryItemId, id),
+        gte(schema.stockObservations.capturedAt, windowStart),
+      ),
+    )
+    .orderBy(asc(schema.stockObservations.capturedAt))
+    .limit(CHART_OBSERVATION_CAP);
+
+  const stockSeries = buildStockSeries(stockInWindow);
+  const recentPrices = [...pricesInWindow].reverse().slice(0, 20);
+  const recentStock = [...stockInWindow].reverse().slice(0, 20);
+  const chartCurrency = pricesInWindow[0]?.currency ?? 'EUR';
 
   const update = updateInventoryAction.bind(null, id);
   const archive = archiveInventoryAction.bind(null, id);
@@ -129,8 +153,24 @@ export default async function InventoryDetailPage({ params }: { params: Promise<
       </div>
 
       <section>
-        <h2 className="text-lg font-semibold tracking-tight">Recent prices</h2>
-        <div className="mt-3 rounded-md border">
+        <div className="flex items-baseline justify-between">
+          <h2 className="text-lg font-semibold tracking-tight">Price history</h2>
+          <span className="text-xs text-muted-foreground">Last {CHART_WINDOW_DAYS} days</span>
+        </div>
+        <div className="mt-3">
+          <PriceChart
+            points={pricesInWindow.map((p) => ({
+              capturedAt: p.capturedAt,
+              amount: Number(p.amount),
+              originalAmount: p.originalAmount != null ? Number(p.originalAmount) : null,
+            }))}
+            currency={chartCurrency}
+            windowStart={windowStart}
+            windowEnd={windowEnd}
+          />
+        </div>
+        <h3 className="mt-6 text-sm font-medium text-muted-foreground">Recent prices</h3>
+        <div className="mt-2 rounded-md border">
           <Table>
             <TableHeader>
               <TableRow>
@@ -167,8 +207,17 @@ export default async function InventoryDetailPage({ params }: { params: Promise<
       </section>
 
       <section>
-        <h2 className="text-lg font-semibold tracking-tight">Recent stock</h2>
-        <div className="mt-3 rounded-md border">
+        <div className="flex items-baseline justify-between">
+          <h2 className="text-lg font-semibold tracking-tight">Stock timeline</h2>
+          <span className="text-xs text-muted-foreground">Last {CHART_WINDOW_DAYS} days</span>
+        </div>
+        <div className="mt-3">
+          <StockTimeline series={stockSeries} windowStart={windowStart} windowEnd={windowEnd} />
+        </div>
+        <h3 className="mt-6 text-sm font-medium text-muted-foreground">
+          Recent stock observations
+        </h3>
+        <div className="mt-2 rounded-md border">
           <Table>
             <TableHeader>
               <TableRow>
@@ -220,4 +269,42 @@ export default async function InventoryDetailPage({ params }: { params: Promise<
       ) : null}
     </div>
   );
+}
+
+type StockRow = {
+  status:
+    | 'in_stock'
+    | 'low_stock'
+    | 'out_of_stock'
+    | 'preorder'
+    | 'backorder'
+    | 'discontinued'
+    | 'unknown';
+  capturedAt: Date;
+  locationId: string;
+  locationName: string;
+  locationKind: 'physical' | 'online';
+};
+
+// Bucket stock observations into per-location series, sorted online-first
+// (the inventory item's own storefront) so the most relevant row sits on top.
+function buildStockSeries(rows: StockRow[]): LocationSeries[] {
+  const map = new Map<string, LocationSeries>();
+  for (const row of rows) {
+    let series = map.get(row.locationId);
+    if (!series) {
+      series = {
+        locationId: row.locationId,
+        locationName: row.locationName,
+        locationKind: row.locationKind,
+        observations: [],
+      };
+      map.set(row.locationId, series);
+    }
+    series.observations.push({ capturedAt: row.capturedAt, status: row.status });
+  }
+  return [...map.values()].sort((a, b) => {
+    if (a.locationKind !== b.locationKind) return a.locationKind === 'online' ? -1 : 1;
+    return a.locationName.localeCompare(b.locationName);
+  });
 }
