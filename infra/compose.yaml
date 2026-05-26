@@ -1,0 +1,93 @@
+name: getnextbike
+
+# Production compose. The host's Caddy fronts this stack — only `web` publishes
+# a host port, bound to loopback. Everything else stays on the internal network.
+
+x-app-env: &app-env
+  env_file: /etc/getnextbike/.env
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [internal]
+
+  migrate:
+    <<: *app-env
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+    image: getnextbike/web:latest
+    command: ['node', 'apps/web/node_modules/.bin/tsx', 'packages/db/src/migrate.ts']
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+    networks: [internal]
+
+  web:
+    <<: *app-env
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+    image: getnextbike/web:latest
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:${WEB_PORT:-3000}:3000'
+    volumes:
+      - snapshots:/var/lib/getnextbike/snapshots:ro
+      - /var/log/getnextbike:/var/log/getnextbike
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3000/api/health']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks: [internal]
+
+  worker:
+    <<: *app-env
+    build:
+      context: ..
+      dockerfile: apps/worker/Dockerfile
+    image: getnextbike/worker:latest
+    restart: unless-stopped
+    volumes:
+      - snapshots:/var/lib/getnextbike/snapshots
+      - /var/log/getnextbike:/var/log/getnextbike
+    environment:
+      LOG_DIR: /var/log/getnextbike
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3100/health']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks: [internal]
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  pg_data:
+  snapshots:

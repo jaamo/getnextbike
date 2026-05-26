@@ -1,0 +1,61 @@
+# Local dev overrides. Loaded automatically by `docker compose -f compose.yaml`
+# when invoked from this directory; together they give a no-config dev loop.
+#
+# Differences from prod:
+#   - web binds to 0.0.0.0:3000 for direct browser access
+#   - bind-mount source for hot reload (no rebuild on every change)
+#   - snapshots volume becomes a host bind mount under ../.dev/snapshots
+#   - credentials are local-only
+
+services:
+  postgres:
+    ports:
+      - '127.0.0.1:5432:5432'
+    environment:
+      POSTGRES_USER: getnextbike
+      POSTGRES_PASSWORD: dev
+      POSTGRES_DB: getnextbike_dev
+
+  migrate:
+    env_file: []
+    environment:
+      DATABASE_URL: postgres://getnextbike:dev@postgres:5432/getnextbike_dev
+
+  web:
+    env_file: []
+    image: node:22-alpine
+    command: sh -c "corepack enable && corepack prepare pnpm@11.3.0 --activate && pnpm install --frozen-lockfile=false && pnpm --filter @getnextbike/web dev"
+    working_dir: /repo
+    ports:
+      - '0.0.0.0:3000:3000'
+    environment:
+      DATABASE_URL: postgres://getnextbike:dev@postgres:5432/getnextbike_dev
+      AUTH_SECRET: dev-only-not-secret
+      NEXT_TELEMETRY_DISABLED: '1'
+      WATCHPACK_POLLING: 'true'
+    volumes:
+      - ..:/repo
+      - /repo/node_modules
+      - /repo/apps/web/node_modules
+      - /repo/apps/web/.next
+      - ../.dev/snapshots:/var/lib/getnextbike/snapshots:ro
+
+  worker:
+    env_file: []
+    image: mcr.microsoft.com/playwright:v1.49.1-jammy
+    command: sh -c "corepack enable && corepack prepare pnpm@11.3.0 --activate && pnpm install --frozen-lockfile=false && pnpm --filter @getnextbike/worker dev"
+    working_dir: /repo
+    environment:
+      DATABASE_URL: postgres://getnextbike:dev@postgres:5432/getnextbike_dev
+      LOG_LEVEL: debug
+    volumes:
+      - ..:/repo
+      - /repo/node_modules
+      - /repo/apps/worker/node_modules
+      - ../.dev/snapshots:/var/lib/getnextbike/snapshots
+
+volumes:
+  pg_data:
+    driver: local
+  snapshots:
+    driver: local

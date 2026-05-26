@@ -1,0 +1,9 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# Allowlist for postinstall scripts that need to run during install
+# (pnpm 11 sandbox). Both ship native binaries that must be built/installed.
+allowBuilds:
+  esbuild: true
+  sharp: true

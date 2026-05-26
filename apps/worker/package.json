@@ -1,0 +1,26 @@
+{
+  "name": "@getnextbike/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@getnextbike/core": "workspace:*",
+    "@getnextbike/crawler": "workspace:*",
+    "@getnextbike/db": "workspace:*",
+    "@getnextbike/llm": "workspace:*",
+    "drizzle-orm": "^0.36.4",
+    "pino": "^9.6.0",
+    "tsx": "^4.19.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.3"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "name": "getnextbike",
+  "private": true,
+  "version": "0.0.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm -r --filter=\"./apps/*\" build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "dev:web": "pnpm --filter @getnextbike/web dev",
+    "dev:worker": "pnpm --filter @getnextbike/worker dev",
+    "db:generate": "pnpm --filter @getnextbike/db generate",
+    "db:migrate": "pnpm --filter @getnextbike/db migrate",
+    "db:studio": "pnpm --filter @getnextbike/db studio"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.2.0",
+    "typescript": "^5.7.3"
+  },
+  "packageManager": "pnpm@11.3.0"
+}
