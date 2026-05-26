@@ -1,3 +1,5 @@
-// Crawler package — Phase 2+ will add fetcher, selector engine, regen pipeline.
-// Phase 1 scaffolding intentionally leaves this empty.
-export {};
+export * from './crawl-runner';
+export * from './fetcher';
+export * from './postprocess';
+export * from './selector-engine';
+export * from './types';

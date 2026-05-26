@@ -3,6 +3,8 @@ import type { Logger } from 'pino';
 
 export interface HealthState {
   lastHeartbeatAt: Date | null;
+  lastTickAt: Date | null;
+  lastSweepAt: Date | null;
 }
 
 export function startHealthServer(port: number, state: HealthState, logger: Logger) {
@@ -14,6 +16,8 @@ export function startHealthServer(port: number, state: HealthState, logger: Logg
       const body = {
         status: stale ? 'degraded' : 'ok',
         lastHeartbeatAt: state.lastHeartbeatAt?.toISOString() ?? null,
+        lastTickAt: state.lastTickAt?.toISOString() ?? null,
+        lastSweepAt: state.lastSweepAt?.toISOString() ?? null,
       };
       res.writeHead(stale ? 503 : 200, { 'content-type': 'application/json' });
       res.end(JSON.stringify(body));
